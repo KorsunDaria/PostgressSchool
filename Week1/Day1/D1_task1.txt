@@ -1,0 +1,84 @@
+
+
+1.VPATH:: 
+
+export PKG_CONFIG_PATH="$(brew --prefix icu4c)/lib/pkgconfig:$PKG_CONFIG_PATH"
+
+../postgres/configure --enable-cassert --prefix=$PWD/install
+make install --jobs=10
+fish_add_path (pwd)/install/bin
+
+make -j10 -C contrib/pg_stat_statements install
+
+2.Claster::
+
+initdb -D master_data
+pg_ctl -D master_data -l master.log start
+
+pg_basebackup -D replica_data --host localhost --create-slot --slot node2 --write-recovery-conf
+dariakorsun@MacBook-Pro-Daria-2 ~/P/pg_built [1]> 
+
+/replica_data/postgresql.conf port 5432 -> port = 5433	
+
+3.Check::
+
+psql -p 5432 -d postgres 
+::postgres=#
+create database test;
+\c test
+create table courses(c_no text primary key,title text,hours integer );
+insert into courses(c_no, title, hours) values('1','math',30);
+insert into courses(c_no, title, hours) values('2','cpp',40);
+select * from courses;
+
+4.Replication:: 
+
+psql -p 5433 -d postgres
+select * from courses;
+
+5.library pg_stat::
+
+make -j10 -C contrib/pg_stat_statements install
+postgresql.conf : shared_preload_libraries = 'pg_stat_statements'
+pg_ctl restart -D master_data
+pg_ctl restart -D replica_data
+
+psql -p 5432 -d postgres
+CREATE EXTENSION pg_stat_statements;
+
+SELECT title, hours FROM courses WHERE c_no = '2';
+SELECT title, hours FROM courses WHERE c_no = '1';
+
+test=# SELECT calls, query FROM pg_stat_statements ORDER BY calls DESC LIMIT 5;
+
+6.PG_bench::
+
+pgbench -p 5432 -i -s 50 test
+pgbench -p 5432 -d test --jobs 8 --client 90 -T 30 --progress 1
+//pg_ctl promote -D replica_data (отвязать безвозвратно)
+
+7.library pg_stat::
+
+test=# SELECT calls, query FROM pg_stat_statements ORDER BY calls DESC LIMIT 5;
+
+
+test=# SELECT calls, total_exec_time / calls AS avg_ms, query FROM pg_stat_statements 
+        ORDER BY avg_ms DESC LIMIT 5;
+
+8.Configure::
+
+change postgresql.conf
+pg_ctl restart -D master_data
+
+9.Extra::
+
+src/test/regress/
+
+cd ./pg_built/src/test/regress
+PATH=~/P/pg_built/bin:$PATH make check
+postgres/src/test/regress/sql/boolean.sql SELECT 'Testing fail' AS my_test;
+
+src/test/isolation/
+
+src/test/tap/
+
