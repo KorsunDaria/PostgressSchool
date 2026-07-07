@@ -1,0 +1,8 @@
+Найти в коде postgresql, каким образом происходит подмена стандартных аргументов 
+запуска на человекочитаемый информативный вывод.
+
+/Users/dariakorsun/PpgPro/postgres/src/backend/utils/misc/ps_status.c
+
+char ** save_ps_display_args
+Main::void init_ps_display
+void set_ps_display
