@@ -79,6 +79,8 @@ PATH=~/P/pg_built/bin:$PATH make check
 postgres/src/test/regress/sql/boolean.sql SELECT 'Testing fail' AS my_test;
 
 src/test/isolation/
+cd ./pg_built/src/test/isolation
+PATH=/Users/dariakorsun/PpgPro/pg_built/bin:$PATH make check
 
 src/test/tap/
 
