@@ -1,0 +1,67 @@
+Что требуется сделать:
+
+1) добавить новый GUC-параметр max_executor_rows ;
+2) встроить проверку лимита в код executor;
+3) при превышении лимита завершать запрос через ereport(ERROR, ...) ; / закончить передачу
+кортежей вверх по дереву
+4) убедиться, что ограничение работает хотя бы для обычных SELECT.
+
+
+
+/Users/dariakorsun/PpgPro/postgres/src/backend/executor/execMain.c::1742::
+
+number_of_lines++;
+		if (check_limit_exec_line(number_of_lines)){
+			elog(ERROR, "too many lines of execution, please check your query");
+			break;
+		}
+
+/Users/dariakorsun/PpgPro/postgres/src/backend/executor/exec_limit.c
+
+#include "postgres.h"
+#include "executor/exec_limit.h"
+#include "miscadmin.h"
+
+
+bool check_limit_exec_line(int line_number)
+{
+	return (line_number > ExecLimit);
+}
+
+/Users/dariakorsun/PpgPro/postgres/src/include/executor/exec_limit.h
+
+#ifndef EXECLIMIT_H
+#define EXECLIMIT_H
+
+
+ bool check_limit_exec_line(int line_number);
+
+#endif							/* EXECLIMIT_H */
+
+/Users/dariakorsun/PpgPro/postgres/src/backend/executor/Makefile::16::
+exec_limit.o \
+
+/Users/dariakorsun/PpgPro/postgres/src/backend/utils/misc/guc_parameters.dat::1056::
+
+{ name => 'exec_rows_limit', type => 'int', context => 'PGC_USERSET', group => 'CONN_AUTH_AUTH',
+  short_desc => 'max exec limit',
+  variable => 'ExecLimit',
+  boot_val => 'INT32_MAX',
+   min => '0',
+  max => 'INT32_MAX',
+},
+
+/Users/dariakorsun/PpgPro/postgres/src/include/miscadmin.h::174::
+
+extern PGDLLIMPORT int ExecLimit;
+
+/Users/dariakorsun/PpgPro/postgres/src/backend/utils/init/globals.c::172::
+
+int			ExecLimit = INT32_MAX;
+
+cd b && make && make install && cd ../
+pg_ctl -D data restart
+psql postgress
+select * from t
+set exec_rows_limit = 10 
+select * from t
