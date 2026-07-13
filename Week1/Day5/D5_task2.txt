@@ -4,3 +4,105 @@
 3) receiveSlot увеличивать счётчик строк;
 4) в конце выполнения запроса выводить итоговое количество;
 5) подключить receiver в тестовом режиме в одном выбранном месте backend-кода.
+
+/Users/dariakorsun/PpgPro/postgres/src/backend/utils/init/globals.c::173::
+bool        receiver_line = true;
+
+/Users/dariakorsun/PpgPro/postgres/src/include/miscadmin.h::172::
+extern PGDLLIMPORT bool receiver_line;
+
+/Users/dariakorsun/PpgPro/postgres/src/backend/utils/misc/guc_parameters.dat::2429
+
+{ name => 'receiver_line', type => 'bool', context => 'PGC_USERSET', group => 'DEVELOPER_OPTIONS',
+  short_desc => 'Print number of lines',
+  variable => 'receiver_line',
+  boot_val => 'true',
+},
+/Users/dariakorsun/PpgPro/postgres/src/backend/tcop/Makefile::23::
+	count_receiver.o \
+
+/Users/dariakorsun/PpgPro/postgres/src/backend/tcop/postgres.c::1278::
+
+if (receiver_line)
+	receiver = CreateCountDestReceiver();
+else
+	receiver = CreateDestReceiver(dest);
+if (dest == DestRemote)
+	SetRemoteDestReceiverParams(receiver, portal);
+
+
+/Users/dariakorsun/PpgPro/postgres/src/backend/tcop/count_receiver.c
+
+#include "postgres.h"
+#include "tcop/dest.h"
+
+typedef struct
+{
+	DestReceiver pub;		
+	int64		count;		
+} CountDestReceiver;
+
+
+static bool
+countReceiveSlot(TupleTableSlot *slot, DestReceiver *self)
+{
+	CountDestReceiver *myState = (CountDestReceiver *) self;
+
+	myState->count++;
+	return true;
+}
+
+static void
+countStartupReceiver(DestReceiver *self, int operation, TupleDesc typeinfo)
+{
+	CountDestReceiver *myState = (CountDestReceiver *) self;
+
+	myState->count = 0;
+	elog(LOG, "count_receiver: начало приёма кортежей");
+}
+
+static void
+countShutdownReceiver(DestReceiver *self)
+{
+	CountDestReceiver *myState = (CountDestReceiver *) self;
+
+	elog(LOG, "count_receiver: обработано строк: " INT64_FORMAT,
+		 myState->count);
+}
+
+static void
+countDestroyReceiver(DestReceiver *self)
+{
+	pfree(self);
+}
+
+DestReceiver *
+CreateCountDestReceiver(void)
+{
+	CountDestReceiver *self =
+		(CountDestReceiver *) palloc0(sizeof(CountDestReceiver));
+
+	self->pub.receiveSlot = countReceiveSlot;
+	self->pub.rStartup = countStartupReceiver;
+	self->pub.rShutdown = countShutdownReceiver;
+	self->pub.rDestroy = countDestroyReceiver;
+	self->pub.mydest = MyDest;
+
+	self->count = 0;
+
+	return (DestReceiver *) self;
+}
+
+
+dariakorsun@MacBook-Pro-Daria-2 ~/P/postgres (master)> psql  postgres
+psql (19devel)
+Type "help" for help.
+
+postgres=# select * from t                                                                                              ;
+2026-07-13 11:21:29.629 +07 [36332] LOG:  count_receiver: начало приёма кортежей
+2026-07-13 11:21:29.629 +07 [36332] STATEMENT:  select * from t
+        ;
+2026-07-13 11:21:29.629 +07 [36332] LOG:  count_receiver: обработано строк: 2
+2026-07-13 11:21:29.629 +07 [36332] STATEMENT:  select * from t
+        ;
+SELECT 2
