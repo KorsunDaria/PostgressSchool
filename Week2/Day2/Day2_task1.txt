@@ -1,0 +1,40 @@
+1. Как запустить нагрузку, распределённую по закону Пуассона, в pgbench? 
+Изучить как это реализовано в pgbench.
+
+pgbench -c 10 -j 4 -T 60 -R 500 -L 100 --latency-limit=100 mydb
+
+dariakorsun@MacBook-Pro-Daria-2 ~/pg (master) [1]> pgbench -c 10 -j 4 -T 60 -R 500 -L 100 --latency-limit=100 pgbench_small
+pgbench (20devel)
+starting vacuum...end.
+transaction type: <builtin: TPC-B (sort of)>
+scaling factor: 50
+query mode: simple
+number of clients: 10
+number of threads: 4
+maximum number of tries: 1
+duration: 60 s
+number of transactions actually processed: 29982
+number of failed transactions: 0 (0.000%)
+number of transactions skipped: 0 (0.000%)
+number of transactions above the 100.0 ms latency limit: 0/29982 (0.000%)
+latency average = 2.106 ms
+latency stddev = 1.335 ms
+rate limit schedule lag: avg 1.263 (max 9.358) ms
+initial connection time = 5.302 ms
+tps = 499.759430 (without initial connection time)
+dariakorsun@MacBook-Pro-Daria-2 ~/pg (master)> 
+
+static int64
+getPoissonRand(pg_prng_state *state, double center)
+{
+	/*
+	 * Use inverse transform sampling to generate a value > 0, such that the
+	 * expected (i.e. average) value is the given argument.
+	 */
+	double		uniform;
+
+	/* pg_prng_double value in [0, 1), uniform in (0, 1] */
+	uniform = 1.0 - pg_prng_double(state);
+
+	return (int64) (-log(uniform) * center + 0.5);
+}
