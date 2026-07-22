@@ -1,0 +1,34 @@
+1) Запутить логическую репликаци между двум узлами и повеит, что данне таблиц
+репликацию, лот двигат (select * from pg_replication_slots).
+
+initdb -D pub_data -U postgres 
+initdb -D sub_data -U postgres 
+
+pg_ctl -D pub_data -l pub.log start 
+pg_ctl -D sub_data -l sub.log start 
+
+psql -p 5432 -U postgres -d postgres -c "
+CREATE TABLE t (id int primary key, val text);
+INSERT INTO t VALUES (1, 'hello'), (2, 'world');
+
+psql -p 5432 -U postgres -d postgres -c "
+CREATE TABLE t (id int primary key, val text);
+
+psql -p 5433 -U postgres -d postgres -c " 
+CREATE SUBSCRIPTION my_sub
+
+psql -p 5433 -U postgres -d postgres -c "SELECT * FROM t;" 
+
+psql -p 5432 -U postgres -d postgres -c "SELECT * FROM pg_replication_slots;" 
+
+psql -p 5432 -U postgres -d postgres -c "SELECT slot_name, restart_lsn, confirmed_flush_lsn FROM pg_replication_slots;" 
+
+psql -p 5432 -U postgres -d postgres -c "INSERT INTO t VALUES (3, 'new row');" 
+
+psql -p 5432 -U postgres -d postgres -c "SELECT slot_name, restart_lsn, confirmed_flush_lsn FROM pg_replication_slots;" 
+
+2) Создат воё катомное логичекое ообщение и добавит его обаботку apply_worker'ом. (м.
+LogLogicalMessage(), apply_dispatch())
+
+3) Сделат вой катомнй аутпут плагин (можно на онове contrib/test_decoding, изменит ввод
+плагина дл каких-либо запией) и подменит им дефолтнй
