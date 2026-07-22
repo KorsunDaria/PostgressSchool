@@ -1,0 +1,27 @@
+Сделать свой poor man profiler через ptrace и addr2line
+(сборка postgres c дебаг символами и флагом -fno-omit-
+frame-pointer)
+
+Поиграться с системным вызовом perf_event_open чтобы
+посчитать количество вызовов какой-нибудь ядерной
+фукнции.
+
+Поиграть с dtrace и postgres-ом. Попробовать запустить
+скрипт из документации.
+meson setup build-dtrace --prefix="$HOME/pginstall-dtrace" -Ddtrace=enabled
+meson install -C build-dtrace
+
+# Инициализация и запуск отдельного кластера
+~/pginstall-dtrace/bin/initdb -D ~/pgdata-dtrace
+~/pginstall-dtrace/bin/pg_ctl -D ~/pgdata-dtrace -l ~/pgdata-dtrace/log.txt start
+~/pginstall-dtrace/bin/pg_ctl -D ~/pgdata-dtrace status
+
+# В psql — узнать PID именно backend-процесса (не postmaster!)
+SELECT pg_backend_pid();
+
+# Сам трейсинг USDT-пробы query-start
+sudo dtrace -q -n '
+postgresql$target:::query-start
+{
+    printf("query: %s\n", copyinstr(arg0));
+}' -p <PID_backend>
