@@ -1,0 +1,121 @@
+ meson setup b --buildtype=debugoptimized --prefix=~/pginstall
+ meson install -C b
+
+~/pginstall/bin/createdb pgbench_small
+~/pginstall/bin/createdb pgbench_large
+
+~/pginstall/bin/pgbench -i -s 50   -d pgbench_small
+~/pginstall/bin/pgbench -i -s 2000 -d pgbench_large
+
+ #!/usr/bin/env bash
+set -euo pipefail
+
+PGBENCH="$HOME/pginstall/bin/pgbench"
+PSQL="$HOME/pginstall/bin/psql"
+
+SCALE_LABELS=("small" "large")
+SCALE_DBS=("pgbench_small" "pgbench_large")
+
+CLIENTS=(1 2 4 8 16 32 64 96 128)
+DURATION=10
+WARMUP=5
+THREADS=$(sysctl -n hw.perflevel0.logicalcpu 2>/dev/null || sysctl -n hw.ncpu)
+OUT_CSV="results.csv"
+RAW_LOG_DIR="raw_logs"
+
+mkdir -p "$RAW_LOG_DIR"
+
+if [[ ! -f "$OUT_CSV" ]]; then
+  echo "scale,clients,threads,duration_s,tps,latency_avg_ms" > "$OUT_CSV"
+fi
+
+for idx in "${!SCALE_LABELS[@]}"; do
+  scale_label="${SCALE_LABELS[$idx]}"
+  db="${SCALE_DBS[$idx]}"
+
+  for c in "${CLIENTS[@]}"; do
+    j=$THREADS
+    if (( j > c )); then j=$c; fi
+
+    echo ">>> scale=$scale_label clients=$c threads=$j"
+
+    if (( WARMUP > 0 )); then
+      "$PGBENCH" -S -c "$c" -j "$j" -T "$WARMUP" -M prepared "$db" > /dev/null 2>&1 || true
+    fi
+
+    raw_file="$RAW_LOG_DIR/${scale_label}_c${c}.log"
+
+    "$PGBENCH" -S -c "$c" -j "$j" -T "$DURATION" -M prepared "$db" > "$raw_file" 2>&1
+
+    tps=$(grep -Eo 'tps = [0-9.]+' "$raw_file" | head -1 | awk '{print $3}')
+    lat=$(grep -Eo 'latency average = [0-9.]+' "$raw_file" | head -1 | awk '{print $4}')
+
+    if [[ -z "$tps" || -z "$lat" ]]; then
+      echo "!!! Не удалось распарсить результат для scale=$scale_label c=$c, см. $raw_file" >&2
+      continue
+    fi
+
+    echo "$scale_label,$c,$j,$DURATION,$tps,$lat" >> "$OUT_CSV"
+  done
+done
+
+echo "Готово. Результаты в $OUT_CSV, сырые логи в $RAW_LOG_DIR/"
+
+import pandas as pd
+import matplotlib.pyplot as plt
+
+df = pd.read_csv("results.csv")
+
+fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+
+# --- Throughput vs Load ---
+ax = axes[0, 0]
+for scale, g in df.groupby("scale"):
+    g = g.sort_values("clients")
+    ax.plot(g["clients"], g["tps"], marker="o", label=scale)
+ax.set_xlabel("clients (load)")
+ax.set_ylabel("throughput, tps")
+ax.set_title("Throughput vs Load")
+ax.legend()
+ax.grid(True, alpha=0.3)
+
+# --- Latency vs Load ---
+ax = axes[0, 1]
+for scale, g in df.groupby("scale"):
+    g = g.sort_values("clients")
+    ax.plot(g["clients"], g["latency_avg_ms"], marker="o", label=scale)
+ax.set_xlabel("clients (load)")
+ax.set_ylabel("latency avg, ms")
+ax.set_title("Latency vs Load")
+ax.legend()
+ax.grid(True, alpha=0.3)
+
+# --- Throughput vs Latency (наглядно показывает точку насыщения) ---
+ax = axes[1, 0]
+for scale, g in df.groupby("scale"):
+    g = g.sort_values("clients")
+    ax.plot(g["latency_avg_ms"], g["tps"], marker="o", label=scale)
+    for _, row in g.iterrows():
+        ax.annotate(str(int(row["clients"])), (row["latency_avg_ms"], row["tps"]),
+                    fontsize=7, alpha=0.7, xytext=(3,3), textcoords="offset points")
+ax.set_xlabel("latency avg, ms")
+ax.set_ylabel("throughput, tps")
+ax.set_title("Throughput vs Latency (числа у точек = clients)")
+ax.legend()
+ax.grid(True, alpha=0.3)
+
+# --- Эффективность: tps/client ---
+ax = axes[1, 1]
+df["tps_per_client"] = df["tps"] / df["clients"]
+for scale, g in df.groupby("scale"):
+    g = g.sort_values("clients")
+    ax.plot(g["clients"], g["tps_per_client"], marker="o", label=scale)
+ax.set_xlabel("clients (load)")
+ax.set_ylabel("tps per client")
+ax.set_title("Efficiency (падение = насыщение)")
+ax.legend()
+ax.grid(True, alpha=0.3)
+
+plt.tight_layout()
+plt.savefig("benchmark_full.png", dpi=150)
+print("Сохранено: benchmark_full.png")
